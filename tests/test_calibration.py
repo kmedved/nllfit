@@ -1,6 +1,6 @@
 import numpy as np
-from hetero_nll.calibration import fit_variance_scale, apply_variance_calibration
-from hetero_nll.metrics import gaussian_nll
+from nllfit.calibration import fit_variance_scale, apply_variance_calibration
+from nllfit.metrics import gaussian_nll
 
 
 def test_variance_scale_closed_form_reduces_nll():

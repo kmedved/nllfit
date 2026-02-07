@@ -20,7 +20,7 @@ index 3bd6768..1d6ba17 100644
 +### Added
 +- `calibration_method="oof"`: calibrates variance scale using out-of-fold mean
 +  predictions. No held-out data required, no in-sample bias. Recommended default.
-+- `oof_mean_predictions()` in `hetero_nll.oof`: computes OOF mean predictions
++- `oof_mean_predictions()` in `nllfit.oof`: computes OOF mean predictions
 +  (reuses same OOF splitter infrastructure).
 +- `calibration_method="train"` emits a `UserWarning` about systematic variance
 +  shrinkage with flexible models.
@@ -67,17 +67,17 @@ index 5746955..9ac94ea 100644
          time_col=None,
      )
      model.fit(X_train, y_train)
-diff --git a/hetero_nll/_version.py b/hetero_nll/_version.py
+diff --git a/nllfit/_version.py b/nllfit/_version.py
 index 3dc1f76..d3ec452 100644
---- a/hetero_nll/_version.py
-+++ b/hetero_nll/_version.py
+--- a/nllfit/_version.py
++++ b/nllfit/_version.py
 @@ -1 +1 @@
 -__version__ = "0.1.0"
 +__version__ = "0.2.0"
-diff --git a/hetero_nll/estimators/lightgbm.py b/hetero_nll/estimators/lightgbm.py
+diff --git a/nllfit/estimators/lightgbm.py b/nllfit/estimators/lightgbm.py
 index 83f1da7..f47701c 100644
---- a/hetero_nll/estimators/lightgbm.py
-+++ b/hetero_nll/estimators/lightgbm.py
+--- a/nllfit/estimators/lightgbm.py
++++ b/nllfit/estimators/lightgbm.py
 @@ -1,7 +1,8 @@
  from __future__ import annotations
  
@@ -345,10 +345,10 @@ index 83f1da7..f47701c 100644
  
          self.calibration_ = cal
          return self
-diff --git a/hetero_nll/oof.py b/hetero_nll/oof.py
+diff --git a/nllfit/oof.py b/nllfit/oof.py
 index 0c3f2af..634d51a 100644
---- a/hetero_nll/oof.py
-+++ b/hetero_nll/oof.py
+--- a/nllfit/oof.py
++++ b/nllfit/oof.py
 @@ -103,3 +103,49 @@ def oof_squared_residuals(
  
      res2 = (y_ - mu_oof) ** 2
@@ -399,10 +399,10 @@ index 0c3f2af..634d51a 100644
 +        mu_oof[va_idx] = model.predict(_slice_rows(X, va_idx))
 +
 +    return mu_oof
-diff --git a/hetero_nll/types.py b/hetero_nll/types.py
+diff --git a/nllfit/types.py b/nllfit/types.py
 index a1c528d..3f72b6c 100644
---- a/hetero_nll/types.py
-+++ b/hetero_nll/types.py
+--- a/nllfit/types.py
++++ b/nllfit/types.py
 @@ -19,4 +19,4 @@ class VarianceCalibration:
      """Multiplicative variance calibration: var_cal = scale * var_raw."""
  
@@ -421,8 +421,8 @@ index 3481be9..bf87aac 100644
  pytest.importorskip("lightgbm")
  
  import pandas as pd
- from hetero_nll import TwoStageHeteroscedasticLightGBM
-+from hetero_nll.metrics import gaussian_nll
+ from nllfit import TwoStageHeteroscedasticLightGBM
++from nllfit.metrics import gaussian_nll
  
  
 -def test_lightgbm_fit_predict_smoke():

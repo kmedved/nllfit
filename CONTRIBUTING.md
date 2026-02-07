@@ -7,7 +7,7 @@ pip install -e .[dev]
 pytest
 ruff check .
 ruff format .
-mypy hetero_nll
+mypy nllfit
 ```
 
 ## Design principles

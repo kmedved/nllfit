@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+import warnings
+from typing import Any, Optional
 
 import numpy as np
 
@@ -30,12 +31,19 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
     n_iterations:
         Alternating re-estimation iterations. In parametric GLM setting this
         corresponds to an IRLS-like alternating scheme.
-    calibrate:
-        Whether to fit a scalar variance multiplier on a holdout split (preferred)
-        or on training data if no holdout is provided.
+    calibration_method:
+        How to calibrate the variance scale after fitting:
+          - "none" (default): No calibration. GLMs rarely overfit, so the
+            in-sample variance estimate is usually adequate.
+          - "holdout": Split off calibration_fraction of data and calibrate on
+            held-out residuals. Use when you want explicit temporal holdout.
+          - "oof": Not supported for GLM (GLMs don't use OOF residuals).
+            If passed, falls back to "none" with a warning.
+          - "train": Calibrate on in-sample residuals. Safe for GLMs (unlike
+            flexible models) since they don't overfit.
     calibration_fraction:
-        If >0 and no explicit (X_cal, y_cal) provided, creates an internal
-        calibration holdout using group/time-aware logic.
+        Fraction of data to hold out when calibration_method="holdout".
+        Ignored for other calibration methods.
     time_col:
         Optional name of a datetime-like column in X to use as time ordering.
         If None, uses pandas time index if present.
@@ -47,20 +55,52 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
         alpha: float = 0.0,
         l1_ratio: float = 0.0,
         n_iterations: int = 1,
-        calibrate: bool = True,
-        calibration_fraction: float = 0.0,
+        calibration_method: str = "none",  # "none" | "holdout" | "train"
+        calibration_fraction: float = 0.2,
         calibration_random_state: int = 123,
         time_col: Optional[str] = None,
         eps: float = 1e-12,
+        # Deprecated parameters — will be removed in 0.3.0
+        calibrate: Optional[bool] = None,
     ):
         self.alpha = float(alpha)
         self.l1_ratio = float(l1_ratio)
         self.n_iterations = int(n_iterations)
-        self.calibrate = bool(calibrate)
         self.calibration_fraction = float(calibration_fraction)
         self.calibration_random_state = int(calibration_random_state)
         self.time_col = time_col
         self.eps = float(eps)
+
+        # Handle deprecated `calibrate` parameter
+        if calibrate is not None:
+            warnings.warn(
+                "The `calibrate` parameter is deprecated and will be removed in v0.3.0. "
+                "Use `calibration_method` instead: "
+                "calibrate=False -> calibration_method='none', "
+                "calibrate=True -> calibration_method='holdout' or 'train'.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            if not calibrate:
+                calibration_method = "none"
+            elif calibration_method == "none":
+                # User passed calibrate=True without specifying calibration_method;
+                # map to legacy behavior: holdout if fraction > 0, else train
+                if self.calibration_fraction > 0.0:
+                    calibration_method = "holdout"
+                else:
+                    calibration_method = "train"
+
+        if calibration_method == "oof":
+            warnings.warn(
+                "calibration_method='oof' is not supported for GLM (no OOF residuals). "
+                "Falling back to calibration_method='none'.",
+                UserWarning,
+                stacklevel=2,
+            )
+            calibration_method = "none"
+
+        self.calibration_method = str(calibration_method)
 
     def fit(
         self,
@@ -84,16 +124,31 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
 
         eps_eff = max(self.eps, 1e-12 * max(float(np.var(y_all)), float(np.finfo(float).tiny)))
 
+        cal_method = self.calibration_method.lower().strip()
+        if cal_method not in {"none", "holdout", "train"}:
+            raise ValueError(
+                f"calibration_method must be one of: 'none', 'holdout', 'train' for GLM. Got {cal_method!r}."
+            )
+
         # Time handling: infer + sort for time-aware splitting (does not affect model correctness)
         time = infer_time(X, time_col=self.time_col)
         Xs, ys, ws, gs, order = time_sort(X, y_all, w_all, None if g_all is None else np.asarray(g_all), time)
 
-        # If we sorted, also reorder time values so any time-based split is aligned.
         if order is not None and time.values is not None:
             time = TimeInfo(kind=time.kind, values=np.asarray(time.values)[order], name=time.name)
 
-        # Calibration split (optional)
-        if self.calibrate and X_cal is None and y_cal is None and self.calibration_fraction > 0.0:
+        # Calibration holdout split
+        X_hold, y_hold, w_hold = None, None, None
+
+        if X_cal is not None and y_cal is not None:
+            # Explicit calibration data always takes priority
+            X_tr, y_tr, w_tr = Xs, ys, ws
+            X_hold = X_cal
+            y_hold = np.asarray(y_cal, dtype=float).reshape(-1)
+            w_hold = None if sample_weight_cal is None else np.asarray(sample_weight_cal, dtype=float).reshape(-1)
+            cal_method = "holdout"
+            cal_strategy = "explicit"
+        elif cal_method == "holdout" and self.calibration_fraction > 0.0:
             X_tr, X_hold, y_tr, y_hold, w_tr, w_hold, _, _, cal_strategy = calibration_split(
                 Xs,
                 ys,
@@ -105,8 +160,7 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
             )
         else:
             X_tr, y_tr, w_tr = Xs, ys, ws
-            X_hold, y_hold, w_hold = X_cal, y_cal, sample_weight_cal
-            cal_strategy = "explicit" if (X_cal is not None and y_cal is not None) else "none"
+            cal_strategy = cal_method  # "train" or "none"
 
         variance_tr = None
 
@@ -142,23 +196,30 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
         self.mean_model_ = mean_model
         self.var_model_ = var_model
         self.eps_ = eps_eff
+        self.calibration_strategy_ = cal_strategy
 
         # Calibration
         cal = VarianceCalibration(scale=1.0, source="none")
-        if self.calibrate:
-            if X_hold is not None and y_hold is not None:
-                y_hold_ = np.asarray(y_hold, dtype=float).reshape(-1)
-                mu_hold = self.mean_model_.predict(X_hold)
-                var_hold_raw = np.clip(self.var_model_.predict(X_hold), eps_eff, np.inf)
-                w_hold_ = None if w_hold is None else np.asarray(w_hold, dtype=float).reshape(-1)
-                cal = fit_variance_scale(y_hold_, mu_hold, var_hold_raw, sample_weight=w_hold_, eps=eps_eff, source="holdout")
-            else:
-                mu_tr_final = self.mean_model_.predict(X_tr)
-                var_tr_raw = np.clip(self.var_model_.predict(X_tr), eps_eff, np.inf)
-                cal = fit_variance_scale(y_tr, mu_tr_final, var_tr_raw, sample_weight=w_tr, eps=eps_eff, source="train")
+
+        if cal_method == "holdout" and X_hold is not None and y_hold is not None:
+            y_hold_ = np.asarray(y_hold, dtype=float).reshape(-1)
+            mu_hold = self.mean_model_.predict(X_hold)
+            var_hold_raw = np.clip(self.var_model_.predict(X_hold), eps_eff, np.inf)
+            w_hold_ = None if w_hold is None else np.asarray(w_hold, dtype=float).reshape(-1)
+            cal = fit_variance_scale(
+                y_hold_, mu_hold, var_hold_raw,
+                sample_weight=w_hold_, eps=eps_eff, source="holdout",
+            )
+
+        elif cal_method == "train":
+            mu_tr_final = self.mean_model_.predict(X_tr)
+            var_tr_raw = np.clip(self.var_model_.predict(X_tr), eps_eff, np.inf)
+            cal = fit_variance_scale(
+                y_tr, mu_tr_final, var_tr_raw,
+                sample_weight=w_tr, eps=eps_eff, source="train",
+            )
 
         self.calibration_ = cal
-        self.calibration_strategy_ = cal_strategy
         return self
 
     def predict_dist(self, X: ArrayLike) -> HeteroscedasticPrediction:

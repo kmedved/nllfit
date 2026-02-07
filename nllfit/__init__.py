@@ -1,4 +1,4 @@
-"""Heteroscedastic Gaussian models (two-stage) with Gaussian NLL evaluation.
+"""nllfit — two-stage heteroscedastic regression with Gaussian NLL evaluation.
 
 Core exports:
 - TwoStageHeteroscedasticGLUM

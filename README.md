@@ -1,4 +1,4 @@
-# hetero-nll
+# nllfit
 
 A small utility package for **two-stage heteroscedastic regression** producing
 Gaussian predictive distributions \((\mu(x), \sigma^2(x))\) and evaluating
@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from hetero_nll import TwoStageHeteroscedasticLightGBM
+from nllfit import TwoStageHeteroscedasticLightGBM
 
 n = 5000
 X = pd.DataFrame({

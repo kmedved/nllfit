@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from hetero_nll import TwoStageHeteroscedasticLightGBM, gaussian_nll
+from nllfit import TwoStageHeteroscedasticLightGBM, gaussian_nll
 
 
 def main():

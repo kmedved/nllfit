@@ -1,5 +1,5 @@
 import numpy as np
-from hetero_nll.metrics import gaussian_nll
+from nllfit.metrics import gaussian_nll
 
 
 def test_gaussian_nll_sanity_constant_var():

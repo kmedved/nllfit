@@ -3,26 +3,28 @@
 ## 0.2.0 - 2026-02-07
 
 ### Breaking Changes
+- **Package renamed from `hetero_nll` to `nllfit`.** All imports must change:
+  `from hetero_nll import ...` → `from nllfit import ...`.
 - `TwoStageHeteroscedasticLightGBM`: replaced `calibrate: bool` parameter with
   `calibration_method: str` accepting `"none"`, `"holdout"`, `"oof"`, or `"train"`.
   The old `calibrate` parameter still works but emits a `FutureWarning` and will
   be removed in v0.3.0.
-- Default changed from `calibrate=True, calibration_fraction=0.0` (which did train
-  calibration) to `calibration_method="oof"` (OOF calibration, no data loss).
-- Default `n_iterations` changed from 1 to 2.
-- Default `oof_residuals_reuse` changed from False to True.
+- `TwoStageHeteroscedasticGLUM`: replaced `calibrate: bool` parameter with
+  `calibration_method: str` accepting `"none"`, `"holdout"`, or `"train"`.
+  `"oof"` is not supported for GLM and falls back to `"none"` with a warning.
+  The old `calibrate` parameter still works but emits a `FutureWarning`.
+- Default LightGBM `calibration_method` changed from train calibration to `"oof"`.
+- Default LightGBM `n_iterations` changed from 1 to 2.
+- Default LightGBM `oof_residuals_reuse` changed from False to True.
 
 ### Added
-- `calibration_method="oof"`: calibrates variance scale using out-of-fold mean
-  predictions. No held-out data required, no in-sample bias. Recommended default.
-- `oof_mean_predictions()` in `hetero_nll.oof`: computes OOF mean predictions
+- `calibration_method="oof"` for LightGBM: calibrates variance scale using
+  out-of-fold mean predictions. No held-out data required, no in-sample bias.
+- `oof_mean_predictions()` in `nllfit.oof`: computes OOF mean predictions
   (reuses same OOF splitter infrastructure).
-- `calibration_method="train"` emits a `UserWarning` about systematic variance
-  shrinkage with flexible models.
-- New tests: `test_calibration_method_oof`, `test_calibration_method_holdout`,
-  `test_calibration_method_train_warns`, `test_calibration_method_none`,
-  `test_calibration_method_invalid_raises`, `test_deprecated_calibrate_param_warns`,
-  `test_two_iter_oof_cal_improves_nll`, `test_explicit_cal_data_overrides`.
+- `calibration_method="train"` on LightGBM emits a `UserWarning` about
+  systematic variance shrinkage with flexible models.
+- Comprehensive tests for all calibration methods on both estimators.
 
 ### Fixed
 - Train calibration (calibrating on in-sample residuals) was producing scale << 1

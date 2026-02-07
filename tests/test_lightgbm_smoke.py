@@ -5,8 +5,8 @@ import pytest
 pytest.importorskip("lightgbm")
 
 import pandas as pd
-from hetero_nll import TwoStageHeteroscedasticLightGBM
-from hetero_nll.metrics import gaussian_nll
+from nllfit import TwoStageHeteroscedasticLightGBM
+from nllfit.metrics import gaussian_nll
 
 
 def _make_data(n=500, seed=0):

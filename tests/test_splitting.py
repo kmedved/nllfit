@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from hetero_nll.splitting import infer_time, time_sort, calibration_split
+from nllfit.splitting import infer_time, time_sort, calibration_split
 
 
 def test_time_sort_and_time_quantile_split():

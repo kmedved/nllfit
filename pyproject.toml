@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hetero-nll"
+name = "nllfit"
 version = "0.1.0"
 description = "Two-stage heteroscedastic regression utilities for Gaussian NLL (glum + LightGBM)."
 readme = "README.md"
@@ -27,7 +27,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hetero_nll*"]
+include = ["nllfit*"]
 
 [tool.ruff]
 line-length = 100
