@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 import numpy as np
 
@@ -11,7 +12,7 @@ except Exception:  # pragma: no cover
     pd = None  # type: ignore
 
 from ..calibration import apply_variance_calibration, fit_variance_scale
-from ..oof import choose_oof_splitter, oof_squared_residuals
+from ..oof import choose_oof_splitter, oof_mean_predictions, oof_squared_residuals
 from ..splitting import TimeInfo, calibration_split, infer_time, time_sort
 from ..types import HeteroscedasticPrediction, VarianceCalibration
 from .base import HeteroscedasticRegressor, ArrayLike
@@ -52,13 +53,30 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         according to variance_mode.
     variance_mode:
         "auto" | "gamma" | "log"
+    n_iterations:
+        Number of mean/variance alternating iterations. 2 is recommended: the
+        second iteration reweights the mean model by inverse predicted variance.
     n_oof_folds:
         If >1, use OOF residuals. If <=1, uses in-sample residuals (not recommended).
     oof_residuals_reuse:
         If True and n_iterations>1, compute OOF residuals once (based on the first
-        iteration's mean weights) and reuse for later iterations.
+        iteration's mean weights) and reuse for later iterations. Faster but approximate.
+    calibration_method:
+        How to calibrate the variance scale after fitting:
+          - "oof" (default): Calibrate using OOF mean predictions on the training
+            set. No data is held out, no in-sample bias. Recommended.
+          - "holdout": Split off calibration_fraction of data and calibrate on
+            held-out residuals. Use when you want explicit temporal holdout
+            (e.g., time-series with calibration_fraction > 0).
+          - "train": Calibrate on in-sample residuals. NOT recommended for
+            flexible models — causes systematic variance shrinkage.
+          - "none": No calibration.
+    calibration_fraction:
+        Fraction of data to hold out when calibration_method="holdout".
+        Ignored for other calibration methods.
     time_col:
-        Optional name of datetime-like column to use for time ordering/splitting.
+        Optional name of a datetime-like column in X to use for time ordering/splitting.
+        If None, uses pandas time index if present.
     """
 
     def __init__(
@@ -66,17 +84,19 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         *,
         mean_params: Optional[Dict[str, Any]] = None,
         var_params: Optional[Dict[str, Any]] = None,
-        n_iterations: int = 1,
+        n_iterations: int = 2,
         n_oof_folds: int = 5,
         oof_splitter: Optional[Any] = None,
         oof_random_state: int = 42,
         variance_mode: str = "auto",  # "auto" | "gamma" | "log"
-        oof_residuals_reuse: bool = False,
-        calibrate: bool = True,
-        calibration_fraction: float = 0.0,
+        oof_residuals_reuse: bool = True,
+        calibration_method: str = "oof",  # "none" | "holdout" | "oof" | "train"
+        calibration_fraction: float = 0.2,
         calibration_random_state: int = 123,
         time_col: Optional[str] = None,
         eps: float = 1e-12,
+        # Deprecated parameters — will be removed in 0.3.0
+        calibrate: Optional[bool] = None,
     ):
         self.mean_params = mean_params
         self.var_params = var_params
@@ -86,11 +106,32 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         self.oof_random_state = int(oof_random_state)
         self.variance_mode = str(variance_mode)
         self.oof_residuals_reuse = bool(oof_residuals_reuse)
-        self.calibrate = bool(calibrate)
         self.calibration_fraction = float(calibration_fraction)
         self.calibration_random_state = int(calibration_random_state)
         self.time_col = time_col
         self.eps = float(eps)
+
+        # Handle deprecated `calibrate` parameter
+        if calibrate is not None:
+            warnings.warn(
+                "The `calibrate` parameter is deprecated and will be removed in v0.3.0. "
+                "Use `calibration_method` instead: "
+                "calibrate=False -> calibration_method='none', "
+                "calibrate=True -> calibration_method='oof' (recommended) or 'holdout'.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            if not calibrate:
+                calibration_method = "none"
+            elif calibration_method == "oof":
+                # User passed calibrate=True without specifying calibration_method;
+                # map to legacy behavior: holdout if fraction > 0, else train
+                if self.calibration_fraction > 0.0:
+                    calibration_method = "holdout"
+                else:
+                    calibration_method = "train"
+
+        self.calibration_method = str(calibration_method)
 
     def fit(
         self,
@@ -114,11 +155,24 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
 
         eps_eff = max(self.eps, 1e-12 * max(float(np.var(y_all)), float(np.finfo(float).tiny)))
 
+        cal_method = self.calibration_method.lower().strip()
+        if cal_method not in {"none", "holdout", "oof", "train"}:
+            raise ValueError(
+                f"calibration_method must be one of: 'none', 'holdout', 'oof', 'train'. Got {cal_method!r}."
+            )
+
+        if cal_method == "train":
+            warnings.warn(
+                "calibration_method='train' calibrates on in-sample residuals, which causes "
+                "systematic variance shrinkage with flexible models. Use 'oof' or 'holdout' instead.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         # Time handling: infer + sort for time-aware splitting
         time = infer_time(X, time_col=self.time_col)
         Xs, ys, ws, gs, order = time_sort(X, y_all, w_all, None if g_all is None else np.asarray(g_all), time)
 
-        # If we sorted, reorder time values so time-based operations stay aligned.
         if order is not None and time.values is not None:
             time = TimeInfo(kind=time.kind, values=np.asarray(time.values)[order], name=time.name)
 
@@ -141,8 +195,18 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
             "verbose": -1,
         }
 
-        # Calibration split (optional)
-        if self.calibrate and X_cal is None and y_cal is None and self.calibration_fraction > 0.0:
+        # Calibration holdout split (only for "holdout" method)
+        X_hold, y_hold, w_hold = None, None, None
+
+        if X_cal is not None and y_cal is not None:
+            # Explicit calibration data always takes priority
+            X_tr, y_tr, w_tr, g_tr = Xs, ys, ws, gs
+            X_hold = X_cal
+            y_hold = np.asarray(y_cal, dtype=float).reshape(-1)
+            w_hold = None if sample_weight_cal is None else np.asarray(sample_weight_cal, dtype=float).reshape(-1)
+            cal_method = "holdout"  # explicit cal data overrides
+            cal_strategy = "explicit"
+        elif cal_method == "holdout" and self.calibration_fraction > 0.0:
             X_tr, X_hold, y_tr, y_hold, w_tr, w_hold, g_tr, g_hold, cal_strategy = calibration_split(
                 Xs,
                 ys,
@@ -154,15 +218,11 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
             )
         else:
             X_tr, y_tr, w_tr, g_tr = Xs, ys, ws, gs
-            g_hold = None
-            X_hold, y_hold, w_hold = X_cal, y_cal, sample_weight_cal
-            cal_strategy = "explicit" if (X_cal is not None and y_cal is not None) else "none"
+            cal_strategy = cal_method  # "oof", "train", or "none"
 
         g_tr = None if g_tr is None else np.asarray(g_tr)
 
         # Splitter for OOF residuals
-        # Splitter for OOF residuals.
-        # Priority: explicit splitter > groups > time-aware > shuffled KFold
         if self.oof_splitter is not None:
             splitter_obj = self.oof_splitter
         elif g_tr is not None:
@@ -191,7 +251,6 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
 
         chosen_mode: Optional[str] = None
         variance_tr: Optional[np.ndarray] = None
-
         cached_res2: Optional[np.ndarray] = None
 
         for it in range(self.n_iterations):
@@ -250,7 +309,10 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
                     if requested_mode == "gamma":
                         raise
                     chosen_mode = "log"
-                    self.variance_model_info_ = VarianceModelInfo(mode="log", objective="regression", details=f"gamma_failed: {type(e).__name__}")
+                    self.variance_model_info_ = VarianceModelInfo(
+                        mode="log", objective="regression",
+                        details=f"gamma_failed: {type(e).__name__}",
+                    )
 
             if chosen_mode == "log":
                 log_params = dict(base_var_params)
@@ -269,29 +331,54 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         self.eps_ = eps_eff
         self.calibration_strategy_ = cal_strategy
 
+        # ---- Helper to get var predictions ----
+        def _predict_var(X_in: ArrayLike) -> np.ndarray:
+            if self.variance_mode_ == "gamma":
+                return np.clip(self.var_model_.predict(X_in), eps_eff, np.inf)
+            else:
+                return np.clip(np.exp(self.var_model_.predict(X_in)), eps_eff, np.inf)
+
         # ---- Calibration ----
         cal = VarianceCalibration(scale=1.0, source="none")
-        if self.calibrate:
-            if X_hold is not None and y_hold is not None:
-                y_hold_ = np.asarray(y_hold, dtype=float).reshape(-1)
-                mu_hold = self.mean_model_.predict(X_hold)
 
-                if self.variance_mode_ == "gamma":
-                    var_hold_raw = np.clip(self.var_model_.predict(X_hold), eps_eff, np.inf)
-                else:
-                    var_hold_raw = np.clip(np.exp(self.var_model_.predict(X_hold)), eps_eff, np.inf)
+        if cal_method == "holdout" and X_hold is not None and y_hold is not None:
+            y_hold_ = np.asarray(y_hold, dtype=float).reshape(-1)
+            mu_hold = self.mean_model_.predict(X_hold)
+            var_hold_raw = _predict_var(X_hold)
+            w_hold_ = None if w_hold is None else np.asarray(w_hold, dtype=float).reshape(-1)
+            cal = fit_variance_scale(
+                y_hold_, mu_hold, var_hold_raw,
+                sample_weight=w_hold_, eps=eps_eff, source="holdout",
+            )
 
-                w_hold_ = None if w_hold is None else np.asarray(w_hold, dtype=float).reshape(-1)
-                cal = fit_variance_scale(y_hold_, mu_hold, var_hold_raw, sample_weight=w_hold_, eps=eps_eff, source="holdout")
-            else:
-                mu_tr_final = self.mean_model_.predict(X_tr)
+        elif cal_method == "oof":
+            # OOF mean predictions — avoids in-sample bias, no data loss
+            def mean_factory_cal() -> Any:
+                return lgb.LGBMRegressor(**mean_params)
 
-                if self.variance_mode_ == "gamma":
-                    var_tr_raw = np.clip(self.var_model_.predict(X_tr), eps_eff, np.inf)
-                else:
-                    var_tr_raw = np.clip(np.exp(self.var_model_.predict(X_tr)), eps_eff, np.inf)
+            mu_oof = oof_mean_predictions(
+                X_tr,
+                y_tr,
+                model_factory=mean_factory_cal,
+                n_splits=self.n_oof_folds,
+                sample_weight=w_mean,
+                splitter=splitter_obj,
+                groups=g_tr,
+                random_state=self.oof_random_state,
+            )
+            var_tr_cal = _predict_var(X_tr)
+            cal = fit_variance_scale(
+                y_tr, mu_oof, var_tr_cal,
+                sample_weight=w_tr, eps=eps_eff, source="oof",
+            )
 
-                cal = fit_variance_scale(y_tr, mu_tr_final, var_tr_raw, sample_weight=w_tr, eps=eps_eff, source="train")
+        elif cal_method == "train":
+            mu_tr_final = self.mean_model_.predict(X_tr)
+            var_tr_raw = _predict_var(X_tr)
+            cal = fit_variance_scale(
+                y_tr, mu_tr_final, var_tr_raw,
+                sample_weight=w_tr, eps=eps_eff, source="train",
+            )
 
         self.calibration_ = cal
         return self

@@ -27,9 +27,9 @@ def main():
 
     model = TwoStageHeteroscedasticLightGBM(
         n_oof_folds=5,
+        n_iterations=2,
         variance_mode="auto",
-        calibrate=True,
-        calibration_fraction=0.2,
+        calibration_method="oof",
         time_col=None,
     )
     model.fit(X_train, y_train)

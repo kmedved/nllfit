@@ -51,8 +51,7 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 m = TwoStageHeteroscedasticLightGBM(
     n_oof_folds=5,
     variance_mode="auto",
-    calibrate=True,
-    calibration_fraction=0.2,
+    calibration_method="oof",  # "oof" | "holdout" | "none"
 )
 m.fit(X_train, y_train)
 

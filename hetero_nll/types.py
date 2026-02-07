@@ -19,4 +19,4 @@ class VarianceCalibration:
     """Multiplicative variance calibration: var_cal = scale * var_raw."""
 
     scale: float = 1.0
-    source: str = "none"  # "holdout" | "train" | "none"
+    source: str = "none"  # "holdout" | "oof" | "train" | "none"
