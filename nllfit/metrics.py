@@ -6,6 +6,11 @@ import numpy as np
 
 from .validation import as_1d_float, validate_1d_same_length, validate_sample_weight
 
+# NOTE: This module uses a polynomial approximation to erf (Abramowitz & Stegun,
+# max error ~1.5e-7) to avoid requiring scipy. If scipy is already a dependency
+# in your environment, you can replace _erf_approx with scipy.special.erf for
+# full precision.
+
 ArrayLike = Union[np.ndarray, "np.typing.ArrayLike"]
 
 
@@ -58,3 +63,148 @@ def gaussian_nll(
 
     w = validate_sample_weight(y_, sample_weight)
     return float(np.average(per, weights=w))
+
+
+def rmse(
+    y: ArrayLike,
+    mu: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+) -> float:
+    """Root mean squared error (optionally weighted)."""
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    validate_1d_same_length(y_, mu=mu_)
+    sq = (y_ - mu_) ** 2
+    if sample_weight is None:
+        return float(np.sqrt(sq.mean()))
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.sqrt(np.average(sq, weights=w)))
+
+
+def mae(
+    y: ArrayLike,
+    mu: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+) -> float:
+    """Mean absolute error (optionally weighted)."""
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    validate_1d_same_length(y_, mu=mu_)
+    ae = np.abs(y_ - mu_)
+    if sample_weight is None:
+        return float(ae.mean())
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(ae, weights=w))
+
+
+def interval_coverage(
+    y: ArrayLike,
+    lo: ArrayLike,
+    hi: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+) -> float:
+    """Fraction of y values falling within [lo, hi] (optionally weighted)."""
+    y_ = as_1d_float("y", y)
+    lo_ = as_1d_float("lo", lo)
+    hi_ = as_1d_float("hi", hi)
+    validate_1d_same_length(y_, lo=lo_, hi=hi_)
+    covered = ((y_ >= lo_) & (y_ <= hi_)).astype(float)
+    if sample_weight is None:
+        return float(covered.mean())
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(covered, weights=w))
+
+
+def interval_width(
+    lo: ArrayLike,
+    hi: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+) -> float:
+    """Mean interval width (optionally weighted)."""
+    lo_ = as_1d_float("lo", lo)
+    hi_ = as_1d_float("hi", hi)
+    validate_1d_same_length(lo_, hi=hi_)
+    widths = hi_ - lo_
+    if sample_weight is None:
+        return float(widths.mean())
+    w = validate_sample_weight(lo_, sample_weight)
+    return float(np.average(widths, weights=w))
+
+
+def crps_gaussian(
+    y: ArrayLike,
+    mu: ArrayLike,
+    var: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+    eps: float = 1e-12,
+) -> float:
+    """Closed-form CRPS for Gaussian predictive distributions.
+
+    CRPS = sigma * (z * (2*Phi(z) - 1) + 2*phi(z) - 1/sqrt(pi))
+
+    where z = (y - mu) / sigma, Phi = standard normal CDF, phi = standard normal PDF.
+    Lower is better.
+    """
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    var_ = as_1d_float("var", var)
+    validate_1d_same_length(y_, mu=mu_, var=var_)
+    var_ = np.clip(var_, eps, np.inf)
+    sigma = np.sqrt(var_)
+    z = (y_ - mu_) / sigma
+
+    phi_z = np.exp(-0.5 * z ** 2) / np.sqrt(2.0 * np.pi)
+    cdf_z = 0.5 * (1.0 + _erf_approx(z / np.sqrt(2.0)))
+
+    per = sigma * (z * (2.0 * cdf_z - 1.0) + 2.0 * phi_z - 1.0 / np.sqrt(np.pi))
+
+    if sample_weight is None:
+        return float(per.mean())
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(per, weights=w))
+
+
+def pit_gaussian(
+    y: ArrayLike,
+    mu: ArrayLike,
+    var: ArrayLike,
+    *,
+    eps: float = 1e-12,
+) -> np.ndarray:
+    """Probability Integral Transform values for Gaussian predictions.
+
+    Returns Phi((y - mu) / sigma) for each sample. Uniform(0,1) if
+    calibrated.
+    """
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    var_ = as_1d_float("var", var)
+    validate_1d_same_length(y_, mu=mu_, var=var_)
+    var_ = np.clip(var_, eps, np.inf)
+    z = (y_ - mu_) / np.sqrt(var_)
+    return 0.5 * (1.0 + _erf_approx(z / np.sqrt(2.0)))
+
+
+def _erf_approx(x: np.ndarray) -> np.ndarray:
+    """Abramowitz & Stegun approximation to erf (max error ~1.5e-7).
+
+    Used to avoid a scipy dependency for CDF/CRPS computation.
+    """
+    a1 = 0.254829592
+    a2 = -0.284496736
+    a3 = 1.421413741
+    a4 = -1.453152027
+    a5 = 1.061405429
+    p = 0.3275911
+
+    sign = np.sign(x)
+    x_abs = np.abs(x)
+    t = 1.0 / (1.0 + p * x_abs)
+    poly = t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5))))
+    result = 1.0 - poly * np.exp(-x_abs ** 2)
+    return sign * result

@@ -96,6 +96,8 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         calibration_random_state: int = 123,
         time_col: Optional[str] = None,
         eps: float = 1e-12,
+        random_state: Optional[int] = None,
+        n_jobs: Optional[int] = None,
         # Deprecated parameters — will be removed in 0.3.0
         calibrate: Optional[bool] = None,
     ):
@@ -111,6 +113,8 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         self.calibration_random_state = int(calibration_random_state)
         self.time_col = time_col
         self.eps = float(eps)
+        self.random_state = random_state
+        self.n_jobs = n_jobs
 
         # Handle deprecated `calibrate` parameter
         if calibrate is not None:
@@ -187,6 +191,10 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
             "reg_lambda": 0.0,
             "verbose": -1,
         }
+        if self.random_state is not None and "random_state" not in mean_params:
+            mean_params["random_state"] = self.random_state
+        if self.n_jobs is not None and "n_jobs" not in mean_params:
+            mean_params["n_jobs"] = self.n_jobs
         base_var_params = dict(self.var_params) if self.var_params is not None else {
             "n_estimators": 300,
             "learning_rate": 0.03,
@@ -195,6 +203,10 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
             "reg_lambda": 1.0,
             "verbose": -1,
         }
+        if self.random_state is not None and "random_state" not in base_var_params:
+            base_var_params["random_state"] = self.random_state
+        if self.n_jobs is not None and "n_jobs" not in base_var_params:
+            base_var_params["n_jobs"] = self.n_jobs
 
         # Calibration holdout split (only for "holdout" method)
         X_hold, y_hold, w_hold = None, None, None

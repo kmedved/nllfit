@@ -158,3 +158,33 @@ def test_explicit_cal_data_overrides():
 
     assert m.calibration_.source == "holdout"
     assert m.calibration_.scale > 0
+
+
+def test_random_state_reproducibility():
+    """Two fits with same random_state should produce identical predictions."""
+    pytest.importorskip("lightgbm")
+    from nllfit.estimators.lightgbm import TwoStageHeteroscedasticLightGBM
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(200, 3))
+    y = X[:, 0] + rng.normal(scale=0.5, size=200)
+
+    m1 = TwoStageHeteroscedasticLightGBM(
+        calibration_method="none",
+        random_state=123,
+        mean_params={"n_estimators": 20, "verbose": -1},
+        var_params={"n_estimators": 20, "verbose": -1},
+    )
+    m1.fit(X, y)
+    p1 = m1.predict(X)
+
+    m2 = TwoStageHeteroscedasticLightGBM(
+        calibration_method="none",
+        random_state=123,
+        mean_params={"n_estimators": 20, "verbose": -1},
+        var_params={"n_estimators": 20, "verbose": -1},
+    )
+    m2.fit(X, y)
+    p2 = m2.predict(X)
+
+    np.testing.assert_array_equal(p1, p2)

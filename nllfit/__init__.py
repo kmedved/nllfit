@@ -9,6 +9,7 @@ Core exports:
 
 from ._version import __version__
 from .types import HeteroscedasticPrediction, VarianceCalibration
+from .conformal import SplitConformalRegressor
 from .metrics import gaussian_nll
 from .estimators.glum import TwoStageHeteroscedasticGLUM
 from .estimators.lightgbm import TwoStageHeteroscedasticLightGBM
@@ -17,6 +18,7 @@ __all__ = [
     "__version__",
     "HeteroscedasticPrediction",
     "VarianceCalibration",
+    "SplitConformalRegressor",
     "gaussian_nll",
     "TwoStageHeteroscedasticGLUM",
     "TwoStageHeteroscedasticLightGBM",
