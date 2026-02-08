@@ -1,4 +1,3 @@
-<<<<<<< ours
 # AGENTS.md — nllfit
 
 This repository implements two-stage heteroscedastic regression and uncertainty evaluation.
@@ -107,11 +106,3 @@ Before finishing:
 - [ ] Verified time/group split behavior (where relevant)
 - [ ] Verified predict_dist outputs positive variance and finite log_var
 - [ ] Ran `pytest`
-=======
-## Repository instructions
-
-- `sample_weight` is always treated as frequency weights.
-- All metrics must accept `sample_weight`.
-- Never use in-sample residuals for variance modeling in flexible models unless explicitly requested.
-- Run `pytest` before marking tasks complete.
->>>>>>> theirs
