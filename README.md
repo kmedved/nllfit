@@ -1,32 +1,33 @@
 # nllfit
 
-A small utility package for **two-stage heteroscedastic regression** producing
-Gaussian predictive distributions \((\mu(x), \sigma^2(x))\) and evaluating
-**Gaussian NLL**.
+`nllfit` is a sklearn-style library for two-stage heteroscedastic regression and uncertainty evaluation.
 
-Key features:
+It provides:
 
-- Two-stage mean/variance modeling for:
-  - `glum` (parametric GLMs)
-  - `LightGBM` (flexible models)
-- Out-of-fold (OOF) residuals for variance modeling to reduce variance leakage.
-- Optional scalar variance calibration (closed form).
-- Gaussian predictive intervals and quantiles.
+- Point predictions via `predict(X)`.
+- Distributional predictions via `predict_dist(X)` with `.mu`, `.var`, `.log_var`.
+- Proper-likelihood scoring via `nll(...)` and `score(...)` (`score = -NLL`).
+- Quantiles/intervals, conformal intervals, and calibration utilities.
 
-## Install (editable / local)
+## Full Documentation
 
-This repo is intended as a starting point. In a real project you would publish to PyPI.
+- Comprehensive guide: [`docs/COMPREHENSIVE_GUIDE.md`](docs/COMPREHENSIVE_GUIDE.md)
+- Example script: [`examples/basic_usage.py`](examples/basic_usage.py)
+- Release history: [`CHANGELOG.md`](CHANGELOG.md)
+- Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+
+## Install
 
 ```bash
 pip install -e .
 ```
 
-Optional dependencies:
+Optional extras:
 
 ```bash
-pip install -e .[lgbm]
-pip install -e .[glum]
-pip install -e .[dev]
+pip install -e .[lgbm]  # LightGBM estimator
+pip install -e .[glum]  # GLUM estimator
+pip install -e .[dev]   # pytest, ruff, mypy
 ```
 
 ## Quickstart
@@ -38,20 +39,25 @@ from sklearn.model_selection import train_test_split
 
 from nllfit import TwoStageHeteroscedasticLightGBM
 
+rng = np.random.default_rng(0)
 n = 5000
 X = pd.DataFrame({
-    "x1": np.random.randn(n),
-    "x2": np.random.randn(n),
+    "x1": rng.normal(size=n),
+    "x2": rng.normal(size=n),
 })
-true_var = np.exp(0.5 + 1.0 * X["x1"].values)
-y = (2 * X["x1"] - X["x2"]).values + np.sqrt(true_var) * np.random.randn(n)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+true_var = np.exp(0.5 + 1.0 * X["x1"].values)
+y = (2 * X["x1"] - X["x2"]).values + rng.normal(scale=np.sqrt(true_var))
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
 m = TwoStageHeteroscedasticLightGBM(
+    n_iterations=2,
     n_oof_folds=5,
     variance_mode="auto",
-    calibration_method="oof",  # "oof" | "holdout" | "none"
+    calibration_method="oof",
 )
 m.fit(X_train, y_train)
 
@@ -61,6 +67,31 @@ print("NLL:", m.nll(X_test, y_test))
 lo, hi = m.predict_interval(X_test, alpha=0.1)
 q = m.predict_quantiles(X_test, [0.1, 0.5, 0.9], output="dict")
 ```
+
+## Main APIs
+
+Top-level exports:
+
+- Estimators:
+  - `TwoStageHeteroscedasticLightGBM`
+  - `TwoStageHeteroscedasticGLUM`
+  - `LogNormalRegressor`
+- Wrappers:
+  - `LaplaceWrapper`
+  - `StudentTWrapper`
+- Conformal:
+  - `SplitConformalRegressor`
+- Metrics:
+  - `gaussian_nll`
+  - `laplace_nll`
+  - `lognormal_nll`
+  - `student_t_nll`
+- Types:
+  - `HeteroscedasticPrediction`
+  - `LogNormalPrediction`
+  - `VarianceCalibration`
+
+For module-level APIs (`metrics`, `validation`, `oof`, `splitting`, `calibration`, etc.), see the [comprehensive guide](docs/COMPREHENSIVE_GUIDE.md).
 
 ## License
 
