@@ -14,6 +14,16 @@ class HeteroscedasticPrediction(NamedTuple):
     log_var: np.ndarray
 
 
+class LogNormalPrediction(NamedTuple):
+    """Prediction for lognormal/log1p-normal distributions."""
+
+    mu: np.ndarray
+    var: np.ndarray
+    log_var: np.ndarray
+    mu_log: np.ndarray
+    var_log: np.ndarray
+
+
 @dataclass(frozen=True)
 class VarianceCalibration:
     """Multiplicative variance calibration: var_cal = scale * var_raw."""

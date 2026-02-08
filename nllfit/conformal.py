@@ -24,16 +24,18 @@ def _conformal_quantile(
 ) -> float:
     """Compute conformal quantile with finite-sample correction.
 
-    Unweighted: q = ceil((n+1)*(1-alpha)) / n  order statistic.
-    Weighted: weighted quantile at level (1 - alpha) adjusted for finite sample.
+    Unweighted: k = ceil((n+1)*(1-alpha)); return k-th order statistic.
+    Weighted: weighted quantile at level (1 - alpha) adjusted for finite sample,
+    treating weights as frequency weights.
     """
     n = len(scores)
     if n == 0:
         raise ValueError("Cannot compute conformal quantile on empty scores.")
 
     if sample_weight is not None:
-        w = sample_weight / sample_weight.sum()
-        level = (1.0 - alpha) * (1.0 + 1.0 / n)
+        n_eff = float(np.sum(sample_weight))
+        w = sample_weight / n_eff
+        level = (1.0 - alpha) * (1.0 + 1.0 / n_eff)
         level = min(level, 1.0)
         order = np.argsort(scores)
         sorted_scores = scores[order]
@@ -45,9 +47,10 @@ def _conformal_quantile(
         idx = min(idx, n - 1)
         return float(sorted_scores[idx])
     else:
-        level = np.ceil((n + 1) * (1.0 - alpha)) / n
-        level = min(level, 1.0)
-        return float(np.quantile(scores, level))
+        k = int(np.ceil((n + 1) * (1.0 - alpha)))
+        k = min(max(k, 1), n)
+        sorted_scores = np.sort(scores)
+        return float(sorted_scores[k - 1])
 
 
 class SplitConformalRegressor:
@@ -179,7 +182,7 @@ class SplitConformalRegressor:
             lo, hi = self.base_estimator.predict_interval(X, alpha=self.alpha)
             lo = np.asarray(lo, dtype=float).ravel()
             hi = np.asarray(hi, dtype=float).ravel()
-            return np.maximum(lo - y, y - hi)
+            return np.maximum.reduce([lo - y, y - hi, np.zeros_like(y)])
 
         else:
             raise ValueError(f"Unknown method {self.method!r}")

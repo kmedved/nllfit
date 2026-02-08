@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Optional, Union
 
 import numpy as np
@@ -61,6 +62,147 @@ def gaussian_nll(
     if sample_weight is None:
         return float(per.mean())
 
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(per, weights=w))
+
+
+def laplace_nll(
+    y: ArrayLike,
+    mu: ArrayLike,
+    var: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+    eps: float = 1e-12,
+    include_const: bool = False,
+) -> float:
+    """Mean Laplace negative log-likelihood (variance parameterization).
+
+    For Laplace(mu, b): var = 2 * b^2, so b = sqrt(var / 2).
+
+    Parameters
+    ----------
+    y, mu, var:
+        1D arrays of targets, predicted mean, predicted variance.
+    sample_weight:
+        Optional 1D nonnegative weights (treated as frequency weights). Returned
+        value is a weighted average.
+    eps:
+        Lower bound for variance clipping for numerical stability.
+    include_const:
+        Whether to include the log(2) constant (the log(b) term remains).
+    """
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    var_ = as_1d_float("var", var)
+    validate_1d_same_length(y_, mu=mu_, var=var_)
+
+    var_ = np.clip(var_, eps, np.inf)
+    b = np.sqrt(var_ / 2.0)
+    b = np.clip(b, np.sqrt(eps / 2.0), np.inf)
+
+    per = np.log(2.0 * b) + np.abs(y_ - mu_) / b
+    if not include_const:
+        per = per - np.log(2.0)
+
+    if sample_weight is None:
+        return float(per.mean())
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(per, weights=w))
+
+
+def student_t_nll(
+    y: ArrayLike,
+    mu: ArrayLike,
+    var: ArrayLike,
+    df: float,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+    eps: float = 1e-12,
+    include_const: bool = False,
+) -> float:
+    """Mean Student-t negative log-likelihood (variance parameterization).
+
+    For df > 2, var = scale^2 * df / (df - 2).
+    """
+    if df <= 2:
+        raise ValueError("student_t_nll requires df > 2 when var is a variance parameter.")
+
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    var_ = as_1d_float("var", var)
+    validate_1d_same_length(y_, mu=mu_, var=var_)
+
+    scale2 = var_ * (df - 2.0) / df
+    scale2 = np.clip(scale2, eps, np.inf)
+    scale = np.sqrt(scale2)
+
+    z2 = ((y_ - mu_) / scale) ** 2
+    per = np.log(scale) + 0.5 * (df + 1.0) * np.log1p(z2 / df)
+
+    if include_const:
+        const = 0.5 * math.log(df * math.pi) + math.lgamma(df / 2.0) - math.lgamma((df + 1.0) / 2.0)
+        per = per + const
+
+    if sample_weight is None:
+        return float(per.mean())
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(per, weights=w))
+
+
+def lognormal_nll(
+    y: ArrayLike,
+    mu_log: ArrayLike,
+    var_log: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+    eps: float = 1e-12,
+    include_const: bool = False,
+) -> float:
+    """Mean lognormal negative log-likelihood for log(y) ~ Normal(mu_log, var_log)."""
+    y_ = as_1d_float("y", y)
+    if np.any(y_ <= 0.0):
+        raise ValueError("lognormal_nll requires y > 0.")
+    mu_ = as_1d_float("mu_log", mu_log)
+    var_ = as_1d_float("var_log", var_log)
+    validate_1d_same_length(y_, mu_log=mu_, var_log=var_)
+
+    var_ = np.clip(var_, eps, np.inf)
+    t = np.log(y_)
+    per = 0.5 * (np.log(var_) + (t - mu_) ** 2 / var_) + t
+    if include_const:
+        per = per + 0.5 * np.log(2.0 * np.pi)
+
+    if sample_weight is None:
+        return float(per.mean())
+    w = validate_sample_weight(y_, sample_weight)
+    return float(np.average(per, weights=w))
+
+
+def log1p_normal_nll(
+    y: ArrayLike,
+    mu_log: ArrayLike,
+    var_log: ArrayLike,
+    *,
+    sample_weight: Optional[ArrayLike] = None,
+    eps: float = 1e-12,
+    include_const: bool = False,
+) -> float:
+    """Mean NLL for log1p(y) ~ Normal(mu_log, var_log)."""
+    y_ = as_1d_float("y", y)
+    if np.any(y_ < 0.0):
+        raise ValueError("log1p_normal_nll requires y >= 0.")
+    mu_ = as_1d_float("mu_log", mu_log)
+    var_ = as_1d_float("var_log", var_log)
+    validate_1d_same_length(y_, mu_log=mu_, var_log=var_)
+
+    var_ = np.clip(var_, eps, np.inf)
+    t = np.log1p(y_)
+    per = 0.5 * (np.log(var_) + (t - mu_) ** 2 / var_) + np.log1p(y_)
+    if include_const:
+        per = per + 0.5 * np.log(2.0 * np.pi)
+
+    if sample_weight is None:
+        return float(per.mean())
     w = validate_sample_weight(y_, sample_weight)
     return float(np.average(per, weights=w))
 

@@ -174,6 +174,11 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
                 stacklevel=2,
             )
 
+        if cal_method == "oof" and (not self.n_oof_folds or self.n_oof_folds <= 1):
+            raise ValueError("calibration_method='oof' requires n_oof_folds > 1.")
+
+        need_oof = bool(self.n_oof_folds and self.n_oof_folds > 1) or (cal_method == "oof")
+
         # Time handling: infer + sort for time-aware splitting
         time = infer_time(X, time_col=self.time_col)
         Xs, ys, ws, gs, order = time_sort(X, y_all, w_all, None if g_all is None else np.asarray(g_all), time)
@@ -236,27 +241,29 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         g_tr = None if g_tr is None else np.asarray(g_tr)
 
         # Splitter for OOF residuals
-        if self.oof_splitter is not None:
-            splitter_obj = self.oof_splitter
-        elif g_tr is not None:
-            splitter_obj = choose_oof_splitter(
-                X_tr,
-                n_splits=max(2, self.n_oof_folds),
-                random_state=self.oof_random_state,
-                splitter=None,
-                groups=g_tr,
-            )
-        elif time.kind != "none" and time.values is not None:
-            from sklearn.model_selection import TimeSeriesSplit
-            splitter_obj = TimeSeriesSplit(n_splits=max(2, self.n_oof_folds))
-        else:
-            splitter_obj = choose_oof_splitter(
-                X_tr,
-                n_splits=max(2, self.n_oof_folds),
-                random_state=self.oof_random_state,
-                splitter=None,
-                groups=None,
-            )
+        splitter_obj = None
+        if need_oof:
+            if self.oof_splitter is not None:
+                splitter_obj = self.oof_splitter
+            elif g_tr is not None:
+                splitter_obj = choose_oof_splitter(
+                    X_tr,
+                    n_splits=max(2, self.n_oof_folds),
+                    random_state=self.oof_random_state,
+                    splitter=None,
+                    groups=g_tr,
+                )
+            elif time.kind != "none" and time.values is not None:
+                from sklearn.model_selection import TimeSeriesSplit
+                splitter_obj = TimeSeriesSplit(n_splits=max(2, self.n_oof_folds))
+            else:
+                splitter_obj = choose_oof_splitter(
+                    X_tr,
+                    n_splits=max(2, self.n_oof_folds),
+                    random_state=self.oof_random_state,
+                    splitter=None,
+                    groups=None,
+                )
 
         requested_mode = self.variance_mode.lower().strip()
         if requested_mode not in {"auto", "gamma", "log"}:

@@ -1,6 +1,9 @@
 import numpy as np
-import pandas as pd
+import pytest
+
 from nllfit.splitting import infer_time, time_sort, calibration_split
+
+pd = pytest.importorskip("pandas")
 
 
 def test_time_sort_and_time_quantile_split():

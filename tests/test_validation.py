@@ -43,6 +43,12 @@ def test_validate_sample_weight_zero_sum():
         validate_sample_weight(y, np.array([0.0, 0.0, 0.0]))
 
 
+def test_validate_sample_weight_column_vector():
+    y = np.zeros(3)
+    w = validate_sample_weight(y, np.array([[1.0], [2.0], [3.0]]))
+    assert w.shape == (3,)
+
+
 def test_validate_groups_rejects_2d():
     y = np.zeros(6)
     with pytest.raises(ValueError, match="must be 1D"):

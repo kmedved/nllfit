@@ -101,6 +101,17 @@ def test_calibration_method_none():
     assert m.calibration_.scale == 1.0
 
 
+def test_no_oof_when_disabled():
+    X, y, _ = _make_data()
+
+    m = TwoStageHeteroscedasticLightGBM(
+        n_iterations=1,
+        n_oof_folds=1,
+        calibration_method="none",
+    )
+    m.fit(X, y)
+
+
 def test_calibration_method_invalid_raises():
     with pytest.raises(ValueError, match="calibration_method must be"):
         m = TwoStageHeteroscedasticLightGBM(calibration_method="bad")
