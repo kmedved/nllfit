@@ -115,6 +115,7 @@ class TwoStageHeteroscedasticLightGBM(HeteroscedasticRegressor):
         self.eps = float(eps)
         self.random_state = random_state
         self.n_jobs = n_jobs
+        self.calibrate = calibrate
 
         # Handle deprecated `calibrate` parameter
         if calibrate is not None:

@@ -71,6 +71,7 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
         self.calibration_random_state = int(calibration_random_state)
         self.time_col = time_col
         self.eps = float(eps)
+        self.calibrate = calibrate
 
         # Handle deprecated `calibrate` parameter
         if calibrate is not None:
