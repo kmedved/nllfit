@@ -45,11 +45,10 @@ def test_lognormal_nll_weighted_matches_replication():
     expanded_y = np.array([1.0, 2.0, 2.0])
     expanded_mu = np.array([0.0, 0.0, 0.0])
     expanded_var = np.array([1.0, 1.0, 1.0])
-    assert lognormal_nll(y, mu, var, sample_weight=weights, include_const=True) == lognormal_nll(
-        expanded_y,
-        expanded_mu,
-        expanded_var,
-        include_const=True,
+    np.testing.assert_allclose(
+        lognormal_nll(y, mu, var, sample_weight=weights, include_const=True),
+        lognormal_nll(expanded_y, expanded_mu, expanded_var, include_const=True),
+        rtol=1e-12,
     )
 
 

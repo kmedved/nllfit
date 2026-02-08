@@ -25,7 +25,7 @@ def test_laplace_nll_simple():
     mu = np.array([1.0, 1.0])
     var = np.array([2.0, 2.0])
     expected = float(np.log(2.0))
-    assert laplace_nll(y, mu, var, include_const=True) == expected
+    np.testing.assert_allclose(laplace_nll(y, mu, var, include_const=True), expected, rtol=1e-12)
 
 
 def test_laplace_nll_weighted_matches_replication():
@@ -36,11 +36,10 @@ def test_laplace_nll_weighted_matches_replication():
     expanded_y = np.array([0.0, 1.0, 1.0])
     expanded_mu = np.array([0.0, 0.0, 0.0])
     expanded_var = np.array([2.0, 2.0, 2.0])
-    assert laplace_nll(y, mu, var, sample_weight=weights, include_const=True) == laplace_nll(
-        expanded_y,
-        expanded_mu,
-        expanded_var,
-        include_const=True,
+    np.testing.assert_allclose(
+        laplace_nll(y, mu, var, sample_weight=weights, include_const=True),
+        laplace_nll(expanded_y, expanded_mu, expanded_var, include_const=True),
+        rtol=1e-12,
     )
 
 

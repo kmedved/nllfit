@@ -1,10 +1,13 @@
-"""nllfit — two-stage heteroscedastic regression with Gaussian NLL evaluation.
+"""nllfit — two-stage heteroscedastic regression with NLL evaluation.
 
 Core exports:
 - TwoStageHeteroscedasticGLUM
 - TwoStageHeteroscedasticLightGBM
-- gaussian_nll
-- HeteroscedasticPrediction
+- LogNormalRegressor
+- LaplaceWrapper, StudentTWrapper
+- SplitConformalRegressor
+- gaussian_nll, laplace_nll, lognormal_nll, student_t_nll
+- HeteroscedasticPrediction, LogNormalPrediction, VarianceCalibration
 """
 
 from ._version import __version__

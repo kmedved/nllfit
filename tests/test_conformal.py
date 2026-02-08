@@ -193,3 +193,22 @@ def test_conformal_quantile_weighted_matches_expanded():
     q_weighted = _conformal_quantile(scores, alpha, sample_weight=weights)
     q_expanded = _conformal_quantile(expanded, alpha)
     assert q_weighted == q_expanded
+
+
+def test_conformal_quantile_weighted_boundary_replication():
+    """Regression test: weighted quantile must match expansion for integer weights.
+
+    This is the exact counterexample that caught the side='right' bug:
+    scores=[0,1,2], weights=[1,2,1] expands to [0,1,1,2].
+    At alpha=0.4, unweighted on expanded gives 1, not 2.
+    """
+    scores = np.array([0.0, 1.0, 2.0])
+    weights = np.array([1.0, 2.0, 1.0])
+    expanded = np.array([0.0, 1.0, 1.0, 2.0])
+    alpha = 0.4
+    q_weighted = _conformal_quantile(scores, alpha, sample_weight=weights)
+    q_expanded = _conformal_quantile(expanded, alpha)
+    assert q_weighted == q_expanded, (
+        f"Weighted quantile {q_weighted} != expanded quantile {q_expanded} "
+        f"for alpha={alpha}, weights={weights.tolist()}"
+    )

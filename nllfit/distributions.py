@@ -82,7 +82,7 @@ class LaplaceWrapper(BaseEstimator, RegressorMixin):
         return self
 
     def predict(self, X: ArrayLike) -> np.ndarray:
-        return np.asarray(self.base_estimator_.predict(X), dtype=float)
+        return np.asarray(self.base_estimator_.predict(X), dtype=float).ravel()
 
     def predict_dist(self, X: ArrayLike):
         return self.base_estimator_.predict_dist(X)
@@ -121,7 +121,12 @@ class LaplaceWrapper(BaseEstimator, RegressorMixin):
         if qs.size == 0:
             raise ValueError("quantiles must be non-empty.")
         pred = self.predict_dist(X)
-        arr = laplace_ppf(qs, np.asarray(pred.mu, dtype=float), np.asarray(pred.var, dtype=float), eps=self.eps)
+        arr = laplace_ppf(
+            qs,
+            np.asarray(pred.mu, dtype=float).ravel(),
+            np.asarray(pred.var, dtype=float).ravel(),
+            eps=self.eps,
+        )
         return _format_quantiles_output(arr, qs, output=output, column_prefix=column_prefix, X=X)
 
     def predict_interval(self, X: ArrayLike, *, alpha: float = 0.1):
@@ -153,7 +158,7 @@ class StudentTWrapper(BaseEstimator, RegressorMixin):
         return self
 
     def predict(self, X: ArrayLike) -> np.ndarray:
-        return np.asarray(self.base_estimator_.predict(X), dtype=float)
+        return np.asarray(self.base_estimator_.predict(X), dtype=float).ravel()
 
     def predict_dist(self, X: ArrayLike):
         return self.base_estimator_.predict_dist(X)
@@ -202,11 +207,12 @@ class StudentTWrapper(BaseEstimator, RegressorMixin):
         from scipy.stats import t as student_t
 
         pred = self.predict_dist(X)
-        var = np.clip(np.asarray(pred.var, dtype=float), self.eps, np.inf)
+        mu = np.asarray(pred.mu, dtype=float).ravel()
+        var = np.clip(np.asarray(pred.var, dtype=float).ravel(), self.eps, np.inf)
         scale2 = var * (self.df - 2.0) / self.df
         scale2 = np.clip(scale2, self.eps, np.inf)
         scale = np.sqrt(scale2)
-        arr = student_t.ppf(qs[None, :], self.df, loc=np.asarray(pred.mu, dtype=float)[:, None], scale=scale[:, None])
+        arr = student_t.ppf(qs[None, :], self.df, loc=mu[:, None], scale=scale[:, None])
         return _format_quantiles_output(arr, qs, output=output, column_prefix=column_prefix, X=X)
 
     def predict_interval(self, X: ArrayLike, *, alpha: float = 0.1):

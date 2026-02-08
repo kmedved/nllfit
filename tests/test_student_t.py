@@ -30,12 +30,10 @@ def test_student_t_nll_weighted_matches_replication():
     expanded_y = np.array([0.0, 1.0, 1.0])
     expanded_mu = np.array([0.0, 0.0, 0.0])
     expanded_var = np.array([1.0, 1.0, 1.0])
-    assert student_t_nll(y, mu, var, df, sample_weight=weights, include_const=True) == student_t_nll(
-        expanded_y,
-        expanded_mu,
-        expanded_var,
-        df,
-        include_const=True,
+    np.testing.assert_allclose(
+        student_t_nll(y, mu, var, df, sample_weight=weights, include_const=True),
+        student_t_nll(expanded_y, expanded_mu, expanded_var, df, include_const=True),
+        rtol=1e-12,
     )
 
 

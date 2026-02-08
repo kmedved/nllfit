@@ -40,10 +40,11 @@ def _conformal_quantile(
         order = np.argsort(scores)
         sorted_scores = scores[order]
         cum_w = np.cumsum(w[order])
-        # side="right" ensures we pick the smallest score whose cumulative
-        # weight strictly exceeds the level, which is the conservative choice
-        # required for conformal coverage guarantees (especially with ties).
-        idx = int(np.searchsorted(cum_w, level, side="right"))
+        # side="left" picks the first index where cum_w >= level, which
+        # matches the unweighted order-statistic rule (ceil((n+1)*(1-alpha)))
+        # and preserves replication consistency: integer weights produce the
+        # same quantile as expanding the dataset by those counts.
+        idx = int(np.searchsorted(cum_w, level, side="left"))
         idx = min(idx, n - 1)
         return float(sorted_scores[idx])
     else:
