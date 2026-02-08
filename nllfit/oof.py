@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Callable, Dict, Optional, Union
 
 import numpy as np
@@ -9,14 +10,9 @@ try:
 except Exception:  # pragma: no cover
     pd = None  # type: ignore
 
+from .validation import as_1d_float, validate_groups, validate_sample_weight
+
 ArrayLike = Union[np.ndarray, "pd.DataFrame", "pd.Series"]
-
-
-def _as_numpy_1d(x: Any) -> np.ndarray:
-    x = np.asarray(x, dtype=float)
-    if x.ndim != 1:
-        x = x.reshape(-1)
-    return x
 
 
 def _slice_rows(X: ArrayLike, idx: np.ndarray) -> Any:
@@ -45,13 +41,38 @@ def choose_oof_splitter(
         return splitter
 
     if groups is not None:
+        n_groups = len(np.unique(groups))
+        if n_splits > n_groups:
+            warnings.warn(
+                f"n_oof_folds={n_splits} exceeds n_groups={n_groups}; "
+                f"clamping to {n_groups}-fold GroupKFold.",
+                UserWarning,
+                stacklevel=2,
+            )
+            n_splits = n_groups
+        if n_splits < 2:
+            raise ValueError("Need at least 2 groups for GroupKFold.")
         from sklearn.model_selection import GroupKFold
         return GroupKFold(n_splits=n_splits)
+
+    n_samples = len(X)
+    if n_splits > n_samples:
+        warnings.warn(
+            f"n_oof_folds={n_splits} exceeds n_samples={n_samples}; "
+            f"clamping to {n_samples}-fold KFold.",
+            UserWarning,
+            stacklevel=2,
+        )
+        n_splits = n_samples
+    if n_splits < 2:
+        raise ValueError("Need at least 2 samples for KFold.")
 
     if pd is not None and hasattr(X, "index"):
         idx = X.index  # type: ignore[attr-defined]
         if isinstance(idx, (pd.DatetimeIndex, pd.PeriodIndex, pd.TimedeltaIndex)):
             from sklearn.model_selection import TimeSeriesSplit
+            if n_splits >= n_samples:
+                raise ValueError("Need at least n_splits < n_samples for TimeSeriesSplit.")
             return TimeSeriesSplit(n_splits=n_splits)
 
     from sklearn.model_selection import KFold
@@ -71,13 +92,16 @@ def oof_squared_residuals(
     eps: float = 1e-12,
 ) -> np.ndarray:
     """Compute out-of-fold squared residuals (y - mu_oof)^2."""
-    y_ = _as_numpy_1d(y)
-
-    w_all = None if sample_weight is None else _as_numpy_1d(sample_weight)
-    g_all = None if groups is None else np.asarray(groups)
+    y_ = as_1d_float("y", y)
+    w_all = validate_sample_weight(y_, sample_weight)
+    g_all = validate_groups(y_, groups)
 
     splitter_obj = choose_oof_splitter(
-        X, n_splits=n_splits, random_state=random_state, splitter=splitter, groups=None if g_all is None else _as_numpy_1d(g_all)
+        X,
+        n_splits=n_splits,
+        random_state=random_state,
+        splitter=splitter,
+        groups=g_all,
     )
 
     mu_oof = np.empty(len(y_), dtype=float)
@@ -121,16 +145,16 @@ def oof_mean_predictions(
     Returns mu_oof: array of shape (n,) where each entry is the mean
     prediction from a model trained on all other folds.
     """
-    y_ = _as_numpy_1d(y)
-    w_all = None if sample_weight is None else _as_numpy_1d(sample_weight)
-    g_all = None if groups is None else np.asarray(groups)
+    y_ = as_1d_float("y", y)
+    w_all = validate_sample_weight(y_, sample_weight)
+    g_all = validate_groups(y_, groups)
 
     splitter_obj = choose_oof_splitter(
         X,
         n_splits=n_splits,
         random_state=random_state,
         splitter=splitter,
-        groups=None if g_all is None else _as_numpy_1d(g_all),
+        groups=g_all,
     )
 
     mu_oof = np.empty(len(y_), dtype=float)

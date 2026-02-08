@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover
 from ..calibration import apply_variance_calibration, fit_variance_scale
 from ..splitting import TimeInfo, calibration_split, infer_time, time_sort
 from ..types import HeteroscedasticPrediction, VarianceCalibration
+from ..validation import as_1d_float, validate_groups, validate_sample_weight
 from .base import HeteroscedasticRegressor, ArrayLike
 
 
@@ -118,9 +119,9 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
         except Exception as e:  # pragma: no cover
             raise ImportError("glum is required to use TwoStageHeteroscedasticGLUM") from e
 
-        y_all = np.asarray(y, dtype=float).reshape(-1)
-        w_all = None if sample_weight is None else np.asarray(sample_weight, dtype=float).reshape(-1)
-        g_all = None if groups is None else np.asarray(groups)
+        y_all = as_1d_float("y", y)
+        w_all = validate_sample_weight(y_all, sample_weight)
+        g_all = validate_groups(y_all, groups)
 
         eps_eff = max(self.eps, 1e-12 * max(float(np.var(y_all)), float(np.finfo(float).tiny)))
 
@@ -144,8 +145,8 @@ class TwoStageHeteroscedasticGLUM(HeteroscedasticRegressor):
             # Explicit calibration data always takes priority
             X_tr, y_tr, w_tr = Xs, ys, ws
             X_hold = X_cal
-            y_hold = np.asarray(y_cal, dtype=float).reshape(-1)
-            w_hold = None if sample_weight_cal is None else np.asarray(sample_weight_cal, dtype=float).reshape(-1)
+            y_hold = as_1d_float("y_cal", y_cal)
+            w_hold = validate_sample_weight(y_hold, sample_weight_cal)
             cal_method = "holdout"
             cal_strategy = "explicit"
         elif cal_method == "holdout" and self.calibration_fraction > 0.0:

@@ -19,3 +19,13 @@ def test_variance_scale_closed_form_reduces_nll():
     after = gaussian_nll(y, mu, var_cal)
 
     assert after <= before
+
+
+def test_variance_scale_weighted():
+    y = np.array([0.0, 0.0, 2.0, 2.0])
+    mu = np.zeros_like(y)
+    var_raw = np.ones_like(y)
+    weights = np.array([1.0, 1.0, 3.0, 3.0])
+
+    cal = fit_variance_scale(y, mu, var_raw, sample_weight=weights)
+    assert cal.scale > 1.0

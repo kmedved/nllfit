@@ -10,6 +10,8 @@ try:
 except Exception:  # pragma: no cover
     pd = None  # type: ignore
 
+from .validation import validate_groups, validate_sample_weight, validate_time_values
+
 ArrayLike = Union[np.ndarray, "pd.DataFrame", "pd.Series"]
 
 
@@ -149,15 +151,20 @@ def calibration_split(
     if not (0.0 < calibration_fraction < 1.0):
         raise ValueError("calibration_fraction must be in (0, 1)")
 
+    y = np.asarray(y)
+    if y.ndim != 1:
+        y = y.reshape(-1)
+
+    w = validate_sample_weight(y, sample_weight)
+    g = validate_groups(y, groups)
+    if time.values is not None:
+        validate_time_values(y, time.values)
+
     n = len(y)
-    w = sample_weight
-    g = groups
 
     has_time = (time.kind != "none") and (time.values is not None)
 
     if g is not None:
-        g = np.asarray(g)
-
         if has_time:
             # Group time-ordered split: last fraction of groups by last observed time.
             tnum = _to_time_numeric(np.asarray(time.values))

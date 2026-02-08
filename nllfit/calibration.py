@@ -5,6 +5,7 @@ from typing import Optional, Union
 import numpy as np
 
 from .types import VarianceCalibration
+from .validation import as_1d_float, validate_1d_same_length, validate_sample_weight
 
 ArrayLike = Union[np.ndarray, "np.typing.ArrayLike"]
 
@@ -20,7 +21,8 @@ def fit_variance_scale(
 ) -> VarianceCalibration:
     """Fit multiplicative variance scale minimizing Gaussian NLL.
 
-    We calibrate var_cal = c * var_raw.
+    We calibrate var_cal = c * var_raw. sample_weight, when provided, is
+    treated as frequency weights.
 
     Closed-form optimum:
         c* = E[(y-mu)^2 / var_raw]   (weighted average if sample_weight provided)
@@ -30,9 +32,10 @@ def fit_variance_scale(
     - This only rescales variance globally. It will not fix a misspecified
       variance *shape* function.
     """
-    y_ = np.asarray(y, dtype=float).reshape(-1)
-    mu_ = np.asarray(mu, dtype=float).reshape(-1)
-    var_ = np.asarray(var_raw, dtype=float).reshape(-1)
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    var_ = as_1d_float("var_raw", var_raw)
+    validate_1d_same_length(y_, mu=mu_, var_raw=var_)
     var_ = np.clip(var_, eps, np.inf)
 
     ratio = (y_ - mu_) ** 2 / var_
@@ -40,7 +43,7 @@ def fit_variance_scale(
     if sample_weight is None:
         c = float(ratio.mean())
     else:
-        w = np.asarray(sample_weight, dtype=float).reshape(-1)
+        w = validate_sample_weight(y_, sample_weight)
         c = float(np.average(ratio, weights=w))
 
     c = float(np.clip(c, eps, np.inf))

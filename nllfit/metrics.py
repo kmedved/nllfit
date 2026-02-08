@@ -4,6 +4,8 @@ from typing import Optional, Union
 
 import numpy as np
 
+from .validation import as_1d_float, validate_1d_same_length, validate_sample_weight
+
 ArrayLike = Union[np.ndarray, "np.typing.ArrayLike"]
 
 
@@ -28,7 +30,8 @@ def gaussian_nll(
     y, mu, var:
         1D arrays of targets, predicted mean, predicted variance.
     sample_weight:
-        Optional 1D nonnegative weights. Returned value is a weighted average.
+        Optional 1D nonnegative weights (treated as frequency weights). Returned
+        value is a weighted average.
     eps:
         Lower bound for variance clipping for numerical stability.
     include_const:
@@ -39,9 +42,10 @@ def gaussian_nll(
     float
         Average NLL.
     """
-    y_ = np.asarray(y, dtype=float).reshape(-1)
-    mu_ = np.asarray(mu, dtype=float).reshape(-1)
-    var_ = np.asarray(var, dtype=float).reshape(-1)
+    y_ = as_1d_float("y", y)
+    mu_ = as_1d_float("mu", mu)
+    var_ = as_1d_float("var", var)
+    validate_1d_same_length(y_, mu=mu_, var=var_)
 
     var_ = np.clip(var_, eps, np.inf)
     per = 0.5 * (np.log(var_) + (y_ - mu_) ** 2 / var_)
@@ -52,5 +56,5 @@ def gaussian_nll(
     if sample_weight is None:
         return float(per.mean())
 
-    w = np.asarray(sample_weight, dtype=float).reshape(-1)
+    w = validate_sample_weight(y_, sample_weight)
     return float(np.average(per, weights=w))
